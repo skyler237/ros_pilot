@@ -1,5 +1,5 @@
-#include "controller_base.h"
-#include "controller_example.h"
+#include "ros_pilot/controller_base.h"
+#include "ros_pilot/controller_example.h"
 
 namespace rosplane {
 
@@ -8,11 +8,11 @@ controller_base::controller_base():
     nh_private_(ros::NodeHandle())
 {
     _vehicle_state_sub = nh_.subscribe("state", 10, &controller_base::vehicle_state_callback, this);
-    _controller_commands_sub = nh_.subscribe("controller_commands", 10, &controller_base::controller_commands_callback, this);
+    _autopilot_commands_sub = nh_.subscribe("autopilot_commands", 10, &controller_base::autopilot_commands_callback, this);
     _joy_commands_sub = nh_.subscribe("joy_commands", 10, &controller_base::joy_commands_callback, this);
 
     memset(&_vehicle_state, 0, sizeof(_vehicle_state));
-    memset(&_controller_commands, 0, sizeof(_controller_commands));
+    memset(&_autopilot_commands, 0, sizeof(_autopilot_commands));
 
     nh_private_.param<double>("TRIM_E", _params.trim_e, 0.0);
     nh_private_.param<double>("TRIM_A", _params.trim_a, 0.0);
@@ -58,7 +58,7 @@ controller_base::controller_base():
     _internals_pub = nh_.advertise<ros_plane::Controller_Internals>("controller_inners",10);
     _act_pub_timer = nh_.createTimer(ros::Duration(1.0/100.0), &controller_base::actuator_controls_publish, this);
 
-    _controller_command_recieved = false;
+    _autopilot_command_recieved = false;
     _joy_command_recieved = false;
 }
 
@@ -67,10 +67,10 @@ void controller_base::vehicle_state_callback(const fcu_common::StateConstPtr& ms
     _vehicle_state = *msg;
 }
 
-void controller_base::controller_commands_callback(const ros_plane::Controller_CommandsConstPtr& msg)
+void controller_base::autopilot_commands_callback(const ros_plane::Controller_CommandsConstPtr& msg)
 {
-    _controller_command_recieved = true;
-    _controller_commands = *msg;
+    _autopilot_command_recieved = true;
+    _autopilot_commands = *msg;
 }
 
 void controller_base::joy_commands_callback(const ros_pilot::JoyCommandConstPtr& msg)
@@ -137,13 +137,13 @@ void controller_base::actuator_controls_publish(const ros::TimerEvent&)
 
 
     struct output_s output;
-    if(_controller_command_recieved == true)
+    if(_autopilot_command_recieved == true)
     {
-        input.Va_c = _controller_commands.Va_c;
-        input.h_c = _controller_commands.h_c;
-        input.chi_c = _controller_commands.chi_c;
-        input.phi_c = _controller_commands.phi_c;
-        input.phi_valid = _controller_commands.phi_valid;
+        input.Va_c = _autopilot_commands.Va_c;
+        input.h_c = _autopilot_commands.h_c;
+        input.chi_c = _autopilot_commands.chi_c;
+        input.phi_c = _autopilot_commands.phi_c;
+        input.phi_valid = _autopilot_commands.phi_valid;
         input.Ts = 0.01f;
 
         control(_params, input, output);

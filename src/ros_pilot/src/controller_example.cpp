@@ -1,4 +1,4 @@
-#include "controller_example.h"
+#include "ros_pilot/controller_example.h"
 
 namespace rosplane {
 

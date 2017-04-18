@@ -95,6 +95,7 @@ Joy::Joy()
   // current_yaw_vel_ = 0;
 
   namespace_ = nh_.getNamespace();
+  // TODO: Maybe get rid of this topic... probably don't need -- instead just add a mode to have the autopilot use it's own control
   autopilot_command_sub_ = nh_.subscribe(autopilot_command_topic_, 10, &Joy::APCommandCallback, this);
   joy_sub_ = nh_.subscribe("joy", 10, &Joy::JoyCallback, this);
   buttons_.mode.prev_value = 0;
@@ -190,7 +191,7 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
 
   if (msg->buttons[buttons_.mode.index] == 0 && buttons_.mode.prev_value == 1)
   {
-    command_msg_.mode = (command_msg_.mode + 1) % 6;
+    command_msg_.mode = (command_msg_.mode + 1) % 2;
     if (command_msg_.mode == ros_pilot::JoyCommand::MODE_DIRECT_CONTROL)
     {
       override_autopilot_ = true;
@@ -236,6 +237,8 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
 
       current_Va_c_ += dt * max_.Vadot * command_msg_.F;
       command_msg_.F = current_Va_c_;
+
+      ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, current_chi_c_, current_Va_c_);
       break;
 
     // case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:

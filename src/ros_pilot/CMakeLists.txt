@@ -10,6 +10,8 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   sensor_msgs
+  fcu_common
+  dynamic_reconfigure
   message_generation
 )
 
@@ -23,6 +25,12 @@ generate_messages(
   std_msgs
   sensor_msgs
   geometry_msgs
+)
+
+# Generate dynamic reconfigure parameters in the 'cfg' folder
+generate_dynamic_reconfigure_options(
+  cfg/Controller.cfg
+  cfg/Follower.cfg
 )
 
 catkin_package(
@@ -40,6 +48,15 @@ add_definitions(-std=c++11)
 include_directories(include)
 include_directories(${catkin_INCLUDE_DIRS})
 
-add_executable(joy src/joy.cpp)
-add_dependencies(joy ros_pilot_generate_messages_cpp)
-target_link_libraries(joy ${catkin_LIBRARIES})
+add_executable(ros_pilot_joy src/joy.cpp)
+add_dependencies(ros_pilot_joy ros_pilot_generate_messages_cpp)
+target_link_libraries(ros_pilot_joy ${catkin_LIBRARIES})
+
+add_executable(ros_pilot_controller
+            include/ros_pilot/controller_base.h
+            include/ros_pilot/controller_example.h
+            src/controller_base.cpp
+            src/controller_example.cpp
+)
+add_dependencies(ros_pilot_controller ros_pilot_generate_messages_cpp fcu_common_generate_messages_cpp)
+target_link_libraries(ros_pilot_controller ${catkin_LIBRARIES})
