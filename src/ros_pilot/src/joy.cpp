@@ -204,7 +204,7 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
     }
     else
     {
-      ROS_INFO("Invalide Mode");
+      ROS_INFO("Invalid Mode. Value=%d", command_msg_.mode);
     }
   }
   buttons_.mode.prev_value = msg->buttons[buttons_.mode.index];
