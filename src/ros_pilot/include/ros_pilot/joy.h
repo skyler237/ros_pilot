@@ -4,6 +4,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <ros_pilot/JoyCommand.h>
+#include <ros_plane/Controller_Commands.h>
 #include "gazebo_msgs/ModelState.h"
 
 struct Axes
@@ -74,7 +75,7 @@ private:
   // double equilibrium_thrust_;
 
   ros_pilot::JoyCommand command_msg_;
-  ros_pilot::JoyCommand autopilot_command_;
+  ros_plane::Controller_Commands autopilot_command_;
   //  fcu_common::ExtendedCommand extended_command_msg_;
   sensor_msgs::Joy current_joy_;
 
@@ -99,7 +100,7 @@ private:
   void ResumeSimulation();
 
   void JoyCallback(const sensor_msgs::JoyConstPtr &msg);
-  void APCommandCallback(const ros_pilot::JoyCommandConstPtr &msg);
+  void APCommandCallback(const ros_plane::Controller_CommandsConstPtr& msg);
   void Publish();
 
 public:

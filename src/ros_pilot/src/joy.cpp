@@ -56,8 +56,8 @@ Joy::Joy()
   pnh.param<double>("max_roll_angle", max_.roll, 45.0 * M_PI / 180.0);
   pnh.param<double>("max_pitch_angle", max_.pitch, 45.0 * M_PI / 180.0);
 
-  pnh.param<double>("max_hdot", max_.hdot, 1.5);
-  pnh.param<double>("max_Vadot", max_.Vadot, 1.5);
+  pnh.param<double>("max_hdot", max_.hdot, 10);
+  pnh.param<double>("max_Vadot", max_.Vadot, 5);
 
   // TODO: Initialize command
   command_msg_.mode = pnh.param<int>("control_mode", (int)ros_pilot::JoyCommand::MODE_DIRECT_CONTROL);
@@ -153,7 +153,7 @@ void Joy::ResumeSimulation()
   last_time_ = ros::Time::now().toSec();
 }
 
-void Joy::APCommandCallback(const ros_pilot::JoyCommandConstPtr &msg)
+void Joy::APCommandCallback(const ros_plane::Controller_CommandsConstPtr& msg)
 {
   autopilot_command_ = *msg;
 }
@@ -191,16 +191,27 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
 
   if (msg->buttons[buttons_.mode.index] == 0 && buttons_.mode.prev_value == 1)
   {
-    command_msg_.mode = (command_msg_.mode + 1) % 2;
+    command_msg_.mode = (command_msg_.mode + 1) % 3;
+    if (command_msg_.mode == ros_pilot::JoyCommand::MODE_AUTOPILOT)
+    {
+      ROS_INFO("Autopilot Control Mode");
+    }
     if (command_msg_.mode == ros_pilot::JoyCommand::MODE_DIRECT_CONTROL)
     {
-      override_autopilot_ = true;
       ROS_INFO("Direct Control Mode");
     }
     else if (command_msg_.mode == ros_pilot::JoyCommand::MODE_STABLE_CONTROL)
     {
-      override_autopilot_ = true;
       ROS_INFO("Stable Control Mode");
+      // Grab the current commanded values from the autopilot to begin with
+      current_h_c_ = autopilot_command_.h_c;
+      current_Va_c_ = autopilot_command_.Va_c;
+      current_chi_c_ = autopilot_command_.chi_c;
+    }
+    else if (command_msg_.mode == ros_pilot::JoyCommand::MODE_DIRECT_CONTROL)
+    {
+      override_autopilot_ = true;
+      ROS_INFO("Direct Control Mode");
     }
     else
     {
@@ -210,79 +221,75 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
   buttons_.mode.prev_value = msg->buttons[buttons_.mode.index];
 
   // calculate the output command from the joysticks
-  if(override_autopilot_)
+
+  command_msg_.F = msg->axes[axes_.F] * axes_.F_direction;
+  command_msg_.x = msg->axes[axes_.x] * axes_.x_direction;
+  command_msg_.y = msg->axes[axes_.y] * axes_.y_direction;
+  command_msg_.z = msg->axes[axes_.z] * axes_.z_direction;
+
+  switch (command_msg_.mode)
   {
-    command_msg_.F = msg->axes[axes_.F] * axes_.F_direction;
-    command_msg_.x = msg->axes[axes_.x] * axes_.x_direction;
-    command_msg_.y = msg->axes[axes_.y] * axes_.y_direction;
-    command_msg_.z = msg->axes[axes_.z] * axes_.z_direction;
+  case ros_pilot::JoyCommand::MODE_DIRECT_CONTROL:
+    command_msg_.x *= max_.aileron;
+    command_msg_.y *= max_.elevator;
+    command_msg_.z *= max_.rudder;
+    break;
 
-    switch (command_msg_.mode)
-    {
-    case ros_pilot::JoyCommand::MODE_DIRECT_CONTROL:
-      command_msg_.x *= max_.aileron;
-      command_msg_.y *= max_.elevator;
-      command_msg_.z *= max_.rudder;
-      break;
+  case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
+    // Integrate all axes
+    // (Remember that roll affects y velocity and pitch affects -x velocity)
+    current_h_c_ += dt * max_.hdot * command_msg_.y;
+    command_msg_.y = current_h_c_;
 
-    case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
-      // Integrate all axes
-      // (Remember that roll affects y velocity and pitch affects -x velocity)
-      current_h_c_ += dt * max_.hdot * command_msg_.y;
-      command_msg_.y = current_h_c_;
+    current_chi_c_ += dt * max_.yaw_rate * -1.0*command_msg_.z;
+    current_chi_c_ = fmod(current_chi_c_ + 2.0*M_PI, 2.0*M_PI);
+    // Cast the value into a range between -pi and pi
+    command_msg_.z = (current_chi_c_ > M_PI ? current_chi_c_ - 2.0*M_PI : current_chi_c_);
+    // command_msg_.z = current_chi_c_;
 
-      current_chi_c_ += dt * max_.yaw_rate * command_msg_.z;
-      current_chi_c_ = fmod(current_chi_c_, (2.0 * M_PI));
-      command_msg_.z = current_chi_c_;
+    current_Va_c_ += dt * max_.Vadot * -1.0*command_msg_.F;
+    command_msg_.F = current_Va_c_;
 
-      current_Va_c_ += dt * max_.Vadot * command_msg_.F;
-      command_msg_.F = current_Va_c_;
+    ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, command_msg_.z, current_Va_c_);
+    break;
 
-      ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, current_chi_c_, current_Va_c_);
-      break;
+  // case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
+  //   command_msg_.x *= max_.roll;
+  //   command_msg_.y *= max_.pitch;
+  //   command_msg_.z *= max_.yaw_rate;
+  //   if (command_msg_.F > 0.0)
+  //   {
+  //     command_msg_.F = equilibrium_thrust_ + (1.0 - equilibrium_thrust_) * command_msg_.F;
+  //   }
+  //   else
+  //   {
+  //     command_msg_.F = equilibrium_thrust_ + (equilibrium_thrust_) * command_msg_.F;
+  //   }
+  //   break;
 
-    // case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
-    //   command_msg_.x *= max_.roll;
-    //   command_msg_.y *= max_.pitch;
-    //   command_msg_.z *= max_.yaw_rate;
-    //   if (command_msg_.F > 0.0)
-    //   {
-    //     command_msg_.F = equilibrium_thrust_ + (1.0 - equilibrium_thrust_) * command_msg_.F;
-    //   }
-    //   else
-    //   {
-    //     command_msg_.F = equilibrium_thrust_ + (equilibrium_thrust_) * command_msg_.F;
-    //   }
-    //   break;
-
-    // case ros_pilot::JoyCommand::MODE_ROLL_PITCH_YAWRATE_ALTITUDE:
-    //   command_msg_.x *= max_.roll;
-    //   command_msg_.y *= max_.pitch;
-    //   command_msg_.z *= max_.yaw_rate;
-    //   // Integrate altitude
-    //   current_altitude_setpoint_ -= dt * max_.Vadot * command_msg_.F;
-    //   command_msg_.F = current_altitude_setpoint_;
-    //   break;
-    //
-    // case ros_pilot::JoyCommand::MODE_XVEL_YVEL_YAWRATE_ALTITUDE:
-    // {
-    //   // Remember that roll affects y velocity and pitch affects -x velocity
-    //   double original_x = command_msg_.x;
-    //   command_msg_.x = max_.hdot * -1.0 * command_msg_.y;
-    //   command_msg_.y = max_.yvel * original_x;
-    //   command_msg_.z *= max_.yaw_rate;
-    //   // Integrate altitude
-    //   current_altitude_setpoint_ -= dt * max_.Vadot * command_msg_.F;
-    //   command_msg_.F = current_altitude_setpoint_;
-    //   break;
-    // }
+  // case ros_pilot::JoyCommand::MODE_ROLL_PITCH_YAWRATE_ALTITUDE:
+  //   command_msg_.x *= max_.roll;
+  //   command_msg_.y *= max_.pitch;
+  //   command_msg_.z *= max_.yaw_rate;
+  //   // Integrate altitude
+  //   current_altitude_setpoint_ -= dt * max_.Vadot * command_msg_.F;
+  //   command_msg_.F = current_altitude_setpoint_;
+  //   break;
+  //
+  // case ros_pilot::JoyCommand::MODE_XVEL_YVEL_YAWRATE_ALTITUDE:
+  // {
+  //   // Remember that roll affects y velocity and pitch affects -x velocity
+  //   double original_x = command_msg_.x;
+  //   command_msg_.x = max_.hdot * -1.0 * command_msg_.y;
+  //   command_msg_.y = max_.yvel * original_x;
+  //   command_msg_.z *= max_.yaw_rate;
+  //   // Integrate altitude
+  //   current_altitude_setpoint_ -= dt * max_.Vadot * command_msg_.F;
+  //   command_msg_.F = current_altitude_setpoint_;
+  //   break;
+  // }
 
 
-    }
-  }
-  else
-  {
-    command_msg_ = autopilot_command_;
   }
 
   Publish();

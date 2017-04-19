@@ -1,8 +1,9 @@
 # Offboard control command message
 
 # control mode flags
-uint8 MODE_DIRECT_CONTROL = 0
+uint8 MODE_AUTOPILOT      = 0
 uint8 MODE_STABLE_CONTROL = 1
+uint8 MODE_DIRECT_CONTROL = 2
 
 # ignore field bitmasks
 uint8 IGNORE_NONE = 0

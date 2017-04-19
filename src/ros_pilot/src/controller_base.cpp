@@ -135,59 +135,10 @@ void controller_base::actuator_controls_publish(const ros::TimerEvent&)
     input.q = _vehicle_state.q;
     input.r = _vehicle_state.r;
 
-
     struct output_s output;
-    if(_autopilot_command_recieved == true)
-    {
-        input.Va_c = _autopilot_commands.Va_c;
-        input.h_c = _autopilot_commands.h_c;
-        input.chi_c = _autopilot_commands.chi_c;
-        input.phi_c = _autopilot_commands.phi_c;
-        input.phi_valid = _autopilot_commands.phi_valid;
-        input.Ts = 0.01f;
-
-        control(_params, input, output);
-
-        convert_to_pwm(output);
-
-        fcu_common::Command actuators;
-        /* publish actuator controls */
-
-        actuators.ignore = 0;
-        actuators.mode = fcu_common::Command::MODE_PASS_THROUGH;
-        actuators.x = output.delta_a;//(isfinite(output.delta_a)) ? output.delta_a : 0.0f;
-        actuators.y = output.delta_e;//(isfinite(output.delta_e)) ? output.delta_e : 0.0f;
-        actuators.z = output.delta_r;//(isfinite(output.delta_r)) ? output.delta_r : 0.0f;
-        actuators.F = output.delta_t;//(isfinite(output.delta_t)) ? output.delta_t : 0.0f;
-
-        _actuators_pub.publish(actuators);
-
-        if(_internals_pub.getNumSubscribers() > 0)
-        {
-            ros_plane::Controller_Internals inners;
-            inners.phi_c = output.phi_c;
-            inners.theta_c = output.theta_c;
-            switch(output.current_zone)
-            {
-                case alt_zones::TakeOff:
-                    inners.alt_zone = inners.ZONE_TAKE_OFF;
-                    break;
-                case alt_zones::Climb:
-                    inners.alt_zone = inners.ZONE_CLIMB;
-                    break;
-                case alt_zones::Descend:
-                    inners.alt_zone = inners.ZONE_DESEND;
-                    break;
-                case alt_zones::AltitudeHold:
-                    inners.alt_zone = inners.ZONE_ALTITUDE_HOLD;
-                    break;
-            }
-            inners.aux_valid = false;
-            _internals_pub.publish(inners);
-        }
-    }
 
     if(_joy_command_recieved) {
+
       // Pass the commands through directly
       if(_joy_commands.mode == ros_pilot::JoyCommand::MODE_DIRECT_CONTROL) {
         output_s output;
@@ -215,6 +166,7 @@ void controller_base::actuator_controls_publish(const ros::TimerEvent&)
         input.Va_c = _joy_commands.F;
         input.h_c = _joy_commands.y;
         input.chi_c = _joy_commands.z;
+        input.phi_valid = false;
         input.Ts = 0.01f;
 
         control(_params, input, output);
@@ -233,7 +185,61 @@ void controller_base::actuator_controls_publish(const ros::TimerEvent&)
 
         _actuators_pub.publish(actuators);
       }
+      else if(_joy_commands.mode == ros_pilot::JoyCommand::MODE_AUTOPILOT && _autopilot_command_recieved == true)
+      {
+          input.Va_c = _autopilot_commands.Va_c;
+          input.h_c = _autopilot_commands.h_c;
+          input.chi_c = _autopilot_commands.chi_c;
+          input.phi_c = _autopilot_commands.phi_c;
+          input.phi_valid = _autopilot_commands.phi_valid;
+          input.Ts = 0.01f;
+
+          control(_params, input, output);
+
+          convert_to_pwm(output);
+
+          fcu_common::Command actuators;
+          /* publish actuator controls */
+
+          actuators.ignore = 0;
+          actuators.mode = fcu_common::Command::MODE_PASS_THROUGH;
+          actuators.x = output.delta_a;//(isfinite(output.delta_a)) ? output.delta_a : 0.0f;
+          actuators.y = output.delta_e;//(isfinite(output.delta_e)) ? output.delta_e : 0.0f;
+          actuators.z = output.delta_r;//(isfinite(output.delta_r)) ? output.delta_r : 0.0f;
+          actuators.F = output.delta_t;//(isfinite(output.delta_t)) ? output.delta_t : 0.0f;
+
+          _actuators_pub.publish(actuators);
+
+          if(_internals_pub.getNumSubscribers() > 0)
+          {
+              ros_plane::Controller_Internals inners;
+              inners.phi_c = output.phi_c;
+              inners.theta_c = output.theta_c;
+              switch(output.current_zone)
+              {
+                  case alt_zones::TakeOff:
+                      inners.alt_zone = inners.ZONE_TAKE_OFF;
+                      break;
+                  case alt_zones::Climb:
+                      inners.alt_zone = inners.ZONE_CLIMB;
+                      break;
+                  case alt_zones::Descend:
+                      inners.alt_zone = inners.ZONE_DESEND;
+                      break;
+                  case alt_zones::AltitudeHold:
+                      inners.alt_zone = inners.ZONE_ALTITUDE_HOLD;
+                      break;
+              }
+              inners.aux_valid = false;
+              _internals_pub.publish(inners);
+          }
+      }
     }
+
+
+
+
+
 }
 
 } //end namespace
