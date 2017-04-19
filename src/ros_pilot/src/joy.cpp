@@ -31,7 +31,7 @@ Joy::Joy()
   // namespace_nh.param<double>("mass", mass_, 3.61);
   // namespace_nh.param<double>("max_F", max_thrust, 64.50);
   // equilibrium_thrust_ = (mass_*9.80665) / max_thrust;
-  namespace_nh.param<std::string>("mav_name", mav_name_,"junker");
+  namespace_nh.param<std::string>("mav_name", mav_name_,"tracking_mav");
 
   // Get Parameters from joystick configuration yaml
   pnh.param<std::string>("gazebo_namespace", gazebo_ns_, "");
@@ -60,7 +60,7 @@ Joy::Joy()
   pnh.param<double>("max_Vadot", max_.Vadot, 5);
 
   // TODO: Initialize command
-  command_msg_.mode = pnh.param<int>("control_mode", (int)ros_pilot::JoyCommand::MODE_DIRECT_CONTROL);
+  command_msg_.mode = pnh.param<int>("control_mode", (int)ros_pilot::JoyCommand::MODE_AUTOPILOT);
 
   pnh.param<double>("reset_pos_x", reset_pose_.position.x, 0.0);
   pnh.param<double>("reset_pos_y", reset_pose_.position.y, 0.0);

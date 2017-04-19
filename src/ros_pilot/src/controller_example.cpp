@@ -98,6 +98,9 @@ void controller_example::control(const params_s &params, const input_s &input, o
 float controller_example::course_hold(float chi_c, float chi, float r, const params_s &params, float Ts)
 {
     float error = chi_c - chi;
+    // Deal with wrap around -- keep error between -pi and pi
+    error = fmod(error+2.0*M_PI, 2.0*M_PI);
+    error = (error > M_PI ? error - 2*M_PI : error);
 
     c_integrator = c_integrator + (Ts/2)*(error + c_error);
 
