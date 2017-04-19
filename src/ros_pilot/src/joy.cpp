@@ -25,6 +25,7 @@ Joy::Joy()
 
   pnh.param<std::string>("command_topic", command_topic_, "command");
   pnh.param<std::string>("autopilot_command_topic", autopilot_command_topic_, "autopilot_command");
+  pnh.param<std::string>("mav_state_topic", mav_state_topic_, "mav_state");
 
   // Get global parameters
   double max_thrust;
@@ -81,8 +82,10 @@ Joy::Joy()
   pnh.param<int>("button_mode", buttons_.mode.index, 1);
   pnh.param<int>("button_reset", buttons_.reset.index, 9);
   pnh.param<int>("button_pause", buttons_.pause.index, 8);
-  // TODO remove override ??
-  pnh.param<int>("button_override", buttons_.override.index, 8);
+  // trick buttons
+  pnh.param<int>("button_loop_up", buttons_.loop_up.index, 4);
+  pnh.param<int>("button_roll_right", buttons_.roll_right.index, 7);
+  pnh.param<int>("button_roll_left", buttons_.roll_left.index, 6);
 
   command_pub_ = nh_.advertise<ros_pilot::JoyCommand>(command_topic_, 10);
 
@@ -98,6 +101,7 @@ Joy::Joy()
   // TODO: Maybe get rid of this topic... probably don't need -- instead just add a mode to have the autopilot use it's own control
   autopilot_command_sub_ = nh_.subscribe(autopilot_command_topic_, 10, &Joy::APCommandCallback, this);
   joy_sub_ = nh_.subscribe("joy", 10, &Joy::JoyCallback, this);
+  mav_state_sub_ = nh_.subscribe("mav_state", 10, &Joy::StateCallback, this);
   buttons_.mode.prev_value = 0;
   buttons_.reset.prev_value = 0;
 
@@ -158,10 +162,20 @@ void Joy::APCommandCallback(const ros_plane::Controller_CommandsConstPtr& msg)
   autopilot_command_ = *msg;
 }
 
+void Joy::StateCallback(const fcu_common::StateConstPtr& msg)
+{
+  mav_state_ = *msg;
+}
+
 void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
 {
   double dt = ros::Time::now().toSec() - last_time_;
   last_time_ = ros::Time::now().toSec();
+
+  static double preloop_theta = mav_state_.theta;
+  static double preroll_phi = mav_state_.phi;
+
+
 
   current_joy_ = *msg;
 
@@ -170,8 +184,11 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
   if (msg->buttons[buttons_.reset.index] == 0 && buttons_.reset.prev_value == 1)  // button release
   {
     ResetMav();
+    command_state_ = NORMAL;
   }
   buttons_.reset.prev_value = msg->buttons[buttons_.reset.index];
+
+
 
   // Pauses/Unpauses the simulation
   if (msg->buttons[buttons_.pause.index] == 0 && buttons_.pause.prev_value == 1)  // button release
@@ -189,8 +206,33 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
   }
   buttons_.pause.prev_value = msg->buttons[buttons_.pause.index];
 
+  // Trick buttons
+  if (msg->buttons[buttons_.loop_up.index] == 1 && buttons_.loop_up.prev_value == 0)  // button press
+  {
+    command_state_ = LOOP_UP;
+    preloop_theta = mav_state_.theta;
+  }
+  buttons_.loop_up.prev_value = msg->buttons[buttons_.loop_up.index];
+
+  if (msg->buttons[buttons_.roll_right.index] == 1 && buttons_.roll_right.prev_value == 0)  // button press
+  {
+    command_state_ = ROLL_RIGHT;
+    preroll_phi = mav_state_.phi;
+  }
+  buttons_.roll_right.prev_value = msg->buttons[buttons_.roll_right.index];
+
+  if (msg->buttons[buttons_.roll_left.index] == 1 && buttons_.roll_left.prev_value == 0)  // button press
+  {
+    command_state_ = ROLL_LEFT;
+    preroll_phi = mav_state_.phi;
+  }
+  buttons_.roll_left.prev_value = msg->buttons[buttons_.roll_left.index];
+
+
+
   if (msg->buttons[buttons_.mode.index] == 0 && buttons_.mode.prev_value == 1)
   {
+    command_state_ = NORMAL;
     command_msg_.mode = (command_msg_.mode + 1) % 3;
     if (command_msg_.mode == ros_pilot::JoyCommand::MODE_AUTOPILOT)
     {
@@ -222,73 +264,72 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
 
   // calculate the output command from the joysticks
 
-  command_msg_.F = msg->axes[axes_.F] * axes_.F_direction;
-  command_msg_.x = msg->axes[axes_.x] * axes_.x_direction;
-  command_msg_.y = msg->axes[axes_.y] * axes_.y_direction;
-  command_msg_.z = msg->axes[axes_.z] * axes_.z_direction;
+  if (command_state_ == NORMAL) {
+    command_msg_.F = msg->axes[axes_.F] * axes_.F_direction;
+    command_msg_.x = msg->axes[axes_.x] * axes_.x_direction;
+    command_msg_.y = msg->axes[axes_.y] * axes_.y_direction;
+    command_msg_.z = msg->axes[axes_.z] * axes_.z_direction;
 
-  switch (command_msg_.mode)
-  {
-  case ros_pilot::JoyCommand::MODE_DIRECT_CONTROL:
-    command_msg_.x *= max_.aileron;
-    command_msg_.y *= max_.elevator;
-    command_msg_.z *= max_.rudder;
-    break;
+    switch (command_msg_.mode)
+    {
+    case ros_pilot::JoyCommand::MODE_DIRECT_CONTROL:
+      command_msg_.x *= max_.aileron;
+      command_msg_.y *= max_.elevator;
+      command_msg_.z *= max_.rudder;
+      break;
 
-  case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
-    // Integrate all axes
-    // (Remember that roll affects y velocity and pitch affects -x velocity)
-    current_h_c_ += dt * max_.hdot * command_msg_.y;
-    command_msg_.y = current_h_c_;
+    case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
+      // Integrate all axes
+      // (Remember that roll affects y velocity and pitch affects -x velocity)
+      current_h_c_ += dt * max_.hdot * command_msg_.y;
+      command_msg_.y = current_h_c_;
 
-    current_chi_c_ += dt * max_.yaw_rate * -1.0*command_msg_.z;
-    current_chi_c_ = fmod(current_chi_c_ + 2.0*M_PI, 2.0*M_PI);
-    // Cast the value into a range between -pi and pi
-    command_msg_.z = (current_chi_c_ > M_PI ? current_chi_c_ - 2.0*M_PI : current_chi_c_);
-    // command_msg_.z = current_chi_c_;
+      current_chi_c_ += dt * max_.yaw_rate * -1.0*command_msg_.z;
+      current_chi_c_ = fmod(current_chi_c_ + 2.0*M_PI, 2.0*M_PI);
+      // Cast the value into a range between -pi and pi
+      command_msg_.z = (current_chi_c_ > M_PI ? current_chi_c_ - 2.0*M_PI : current_chi_c_);
+      // command_msg_.z = current_chi_c_;
 
-    current_Va_c_ += dt * max_.Vadot * -1.0*command_msg_.F;
-    command_msg_.F = current_Va_c_;
+      current_Va_c_ += dt * max_.Vadot * -1.0*command_msg_.F;
+      command_msg_.F = current_Va_c_;
 
-    ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, command_msg_.z, current_Va_c_);
-    break;
+      ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, command_msg_.z, current_Va_c_);
+      break;
 
-  // case ros_pilot::JoyCommand::MODE_STABLE_CONTROL:
-  //   command_msg_.x *= max_.roll;
-  //   command_msg_.y *= max_.pitch;
-  //   command_msg_.z *= max_.yaw_rate;
-  //   if (command_msg_.F > 0.0)
-  //   {
-  //     command_msg_.F = equilibrium_thrust_ + (1.0 - equilibrium_thrust_) * command_msg_.F;
-  //   }
-  //   else
-  //   {
-  //     command_msg_.F = equilibrium_thrust_ + (equilibrium_thrust_) * command_msg_.F;
-  //   }
-  //   break;
+    }
+  }
+  else if (command_state_ == LOOP_UP) {
+    command_msg_.F = axes_.F_direction;
+    command_msg_.y = max_.elevator * axes_.y_direction;
+    command_msg_.x = 0.0;
+    command_msg_.z = 0.0;
 
-  // case ros_pilot::JoyCommand::MODE_ROLL_PITCH_YAWRATE_ALTITUDE:
-  //   command_msg_.x *= max_.roll;
-  //   command_msg_.y *= max_.pitch;
-  //   command_msg_.z *= max_.yaw_rate;
-  //   // Integrate altitude
-  //   current_altitude_setpoint_ -= dt * max_.Vadot * command_msg_.F;
-  //   command_msg_.F = current_altitude_setpoint_;
-  //   break;
-  //
-  // case ros_pilot::JoyCommand::MODE_XVEL_YVEL_YAWRATE_ALTITUDE:
-  // {
-  //   // Remember that roll affects y velocity and pitch affects -x velocity
-  //   double original_x = command_msg_.x;
-  //   command_msg_.x = max_.hdot * -1.0 * command_msg_.y;
-  //   command_msg_.y = max_.yvel * original_x;
-  //   command_msg_.z *= max_.yaw_rate;
-  //   // Integrate altitude
-  //   current_altitude_setpoint_ -= dt * max_.Vadot * command_msg_.F;
-  //   command_msg_.F = current_altitude_setpoint_;
-  //   break;
-  // }
+    // Exit when the angle of the mav is back to normal
+    if(mav_state_.theta > preloop_theta-0.15 && mav_state_.theta < preloop_theta-0.1 && fabs(mav_state_.phi) < M_PI/2.0) {
+      command_state_ = NORMAL;
+    }
+  }
+  else if (command_state_ == ROLL_LEFT) {
+    command_msg_.F = axes_.F_direction;
+    command_msg_.y = max_.elevator * axes_.y_direction;
+    command_msg_.x = max_.aileron * axes_.x_direction;
+    command_msg_.z = 0.0;
 
+    // Exit when the angle of the mav is back to normal
+    if(mav_state_.phi < preroll_phi+0.15 && mav_state_.phi > preroll_phi+0.1) {
+      command_state_ = NORMAL;
+    }
+  }
+  else if (command_state_ == ROLL_RIGHT) {
+    command_msg_.F = axes_.F_direction;
+    command_msg_.y = 0.0;
+    command_msg_.x = -1.0 * max_.aileron * axes_.x_direction;
+    command_msg_.z = 0.0;
+
+    // Exit when the angle of the mav is back to normal
+    if(mav_state_.phi > preroll_phi-0.15 && mav_state_.phi < preroll_phi-0.1) {
+      command_state_ = NORMAL;
+    }
 
   }
 
@@ -297,7 +338,14 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
 
 void Joy::Publish()
 {
-  command_pub_.publish(command_msg_);
+  if(command_state_ != NORMAL) {
+    ros_pilot::JoyCommand temp_command = command_msg_;
+    temp_command.mode = ros_pilot::JoyCommand::MODE_DIRECT_CONTROL;
+    command_pub_.publish(temp_command);
+  }
+  else {
+    command_pub_.publish(command_msg_);
+  }
 }
 
 int main(int argc, char **argv)

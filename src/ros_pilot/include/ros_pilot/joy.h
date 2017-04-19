@@ -5,7 +5,16 @@
 #include <sensor_msgs/Joy.h>
 #include <ros_pilot/JoyCommand.h>
 #include <ros_plane/Controller_Commands.h>
+#include <fcu_common/State.h>
 #include "gazebo_msgs/ModelState.h"
+
+typedef enum {
+  NORMAL,
+  LOOP_UP,
+  LOOP_DOWN,
+  ROLL_LEFT,
+  ROLL_RIGHT,
+} command_state_t;
 
 struct Axes
 {
@@ -48,7 +57,9 @@ struct Buttons
   Button mode;
   Button reset;
   Button pause;
-  Button override;
+  Button loop_up;
+  Button roll_right;
+  Button roll_left;
 };
 
 class Joy
@@ -60,10 +71,12 @@ private:
   ros::Publisher command_pub_;
   ros::Subscriber autopilot_command_sub_;
   ros::Subscriber joy_sub_;
+  ros::Subscriber mav_state_sub_;
 
   std::string namespace_;
   std::string command_topic_;
   std::string autopilot_command_topic_;
+  std::string mav_state_topic_;
 
   std::string mav_name_;
   std::string gazebo_ns_;
@@ -89,6 +102,10 @@ private:
   double current_chi_c_;
   double last_time_;
 
+  fcu_common::State mav_state_;
+
+  command_state_t command_state_ = NORMAL;
+
 
   // double current_yaw_vel_;
   // double v_yaw_step_;
@@ -101,6 +118,7 @@ private:
 
   void JoyCallback(const sensor_msgs::JoyConstPtr &msg);
   void APCommandCallback(const ros_plane::Controller_CommandsConstPtr& msg);
+  void StateCallback(const fcu_common::StateConstPtr& msg);
   void Publish();
 
 public:
