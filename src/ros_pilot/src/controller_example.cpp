@@ -1,6 +1,6 @@
 #include "ros_pilot/controller_example.h"
 
-namespace rosplane {
+namespace ros_pilot {
 
 controller_example::controller_example() : controller_base()
 {
@@ -101,8 +101,10 @@ float controller_example::course_hold(float chi_c, float chi, float r, const par
     // Deal with wrap around -- keep error between -pi and pi
     error = fmod(error+2.0*M_PI, 2.0*M_PI);
     error = (error > M_PI ? error - 2*M_PI : error);
+    // Zero out if data is not finite
+    error = std::isfinite(error) ? error : 0.0;
 
-    c_integrator = c_integrator + (Ts/2)*(error + c_error);
+    c_integrator = c_integrator + (Ts/2.0)*(error + c_error);
 
     float up = params.c_kp * error;
     float ui = params.c_ki * c_integrator;

@@ -3,7 +3,7 @@
 
 #include "ros_pilot/controller_base.h"
 
-namespace rosplane {
+namespace ros_pilot {
 
 class controller_example : public controller_base
 {

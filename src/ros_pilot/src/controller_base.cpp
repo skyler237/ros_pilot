@@ -1,13 +1,14 @@
 #include "ros_pilot/controller_base.h"
 #include "ros_pilot/controller_example.h"
 
-namespace rosplane {
+namespace ros_pilot {
 
 controller_base::controller_base():
     nh_(ros::NodeHandle()),
     nh_private_(ros::NodeHandle())
 {
     _vehicle_state_sub = nh_.subscribe("state", 10, &controller_base::vehicle_state_callback, this);
+    _vehicle_attitude_sub = nh_.subscribe("attitude", 10, &controller_base::vehicle_attitude_callback, this);
     _autopilot_commands_sub = nh_.subscribe("autopilot_commands", 10, &controller_base::autopilot_commands_callback, this);
     _joy_commands_sub = nh_.subscribe("joy_commands", 10, &controller_base::joy_commands_callback, this);
 
@@ -64,7 +65,22 @@ controller_base::controller_base():
 
 void controller_base::vehicle_state_callback(const fcu_common::StateConstPtr& msg)
 {
-    _vehicle_state = *msg;
+    fcu_common::State state = *msg;
+    // Don't change attitude here
+    state.phi = _vehicle_state.phi;
+    state.theta = _vehicle_state.theta;
+    state.psi = _vehicle_state.psi;
+
+    _vehicle_state = state;
+}
+
+void controller_base::vehicle_attitude_callback(const fcu_common::StateConstPtr& msg)
+// void controller_base::vehicle_attitude_callback(const geometry_msgs::Vector3ConstPtr& msg)
+{
+    // Update attitude from attitude only estimation
+    _vehicle_state.phi = msg->phi;
+    _vehicle_state.theta = msg->theta;
+    _vehicle_state.psi = msg->psi;
 }
 
 void controller_base::autopilot_commands_callback(const ros_plane::Controller_CommandsConstPtr& msg)
@@ -79,7 +95,7 @@ void controller_base::joy_commands_callback(const ros_pilot::JoyCommandConstPtr&
     _joy_commands = *msg;
 }
 
-void controller_base::reconfigure_callback(ros_plane::ControllerConfig &config, uint32_t level)
+void controller_base::reconfigure_callback(ros_pilot::ControllerConfig &config, uint32_t level)
 {
   _params.trim_e = config.TRIM_E;
   _params.trim_a = config.TRIM_A;
@@ -154,10 +170,10 @@ void controller_base::actuator_controls_publish(const ros::TimerEvent&)
 
         actuators.ignore = 0;
         actuators.mode = fcu_common::Command::MODE_PASS_THROUGH;
-        actuators.x = output.delta_a;//(isfinite(output.delta_a)) ? output.delta_a : 0.0f;
-        actuators.y = output.delta_e;//(isfinite(output.delta_e)) ? output.delta_e : 0.0f;
-        actuators.z = output.delta_r;//(isfinite(output.delta_r)) ? output.delta_r : 0.0f;
-        actuators.F = output.delta_t;//(isfinite(output.delta_t)) ? output.delta_t : 0.0f;
+        actuators.x = (std::isfinite(output.delta_a)) ? output.delta_a : 0.0f;//output.delta_a;
+        actuators.y = (std::isfinite(output.delta_e)) ? output.delta_e : 0.0f;//output.delta_e;
+        actuators.z = (std::isfinite(output.delta_r)) ? output.delta_r : 0.0f;//output.delta_r;
+        actuators.F = (std::isfinite(output.delta_t)) ? output.delta_t : 0.0f;//output.delta_t;
 
         _actuators_pub.publish(actuators);
       }
@@ -245,8 +261,8 @@ void controller_base::actuator_controls_publish(const ros::TimerEvent&)
 } //end namespace
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "ros_plane_controller");
-  rosplane::controller_base* cont = new rosplane::controller_example();
+  ros::init(argc, argv, "ros_pilot_controller");
+  ros_pilot::controller_base* cont = new ros_pilot::controller_example();
 
   ros::spin();
 

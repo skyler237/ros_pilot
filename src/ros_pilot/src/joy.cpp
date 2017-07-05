@@ -293,7 +293,19 @@ void Joy::JoyCallback(const sensor_msgs::JoyConstPtr &msg)
       current_Va_c_ += dt * max_.Vadot * -1.0*command_msg_.F;
       command_msg_.F = current_Va_c_;
 
-      ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, command_msg_.z, current_Va_c_);
+      static double prev_h_c = 0.0;
+      static double prev_chi_c = 0.0;
+      static double prev_Va_c = 0.0;
+
+      // Print the update when any of the values change
+      if (current_h_c_ != prev_h_c || command_msg_.z != prev_chi_c || current_Va_c_ != prev_Va_c) {
+        ROS_INFO("Updating commanded values: h_c=%f, chi_c=%f, Va_c=%f", current_h_c_, command_msg_.z, current_Va_c_);
+      }
+
+      prev_h_c = current_h_c_;
+      prev_chi_c = command_msg_.z;
+      prev_Va_c = current_Va_c_;
+
       break;
 
     }

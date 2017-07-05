@@ -12,14 +12,15 @@
 #include <ros/ros.h>
 #include <fcu_common/Command.h>
 #include <fcu_common/State.h>
+#include <geometry_msgs/Vector3.h>
 #include <ros_plane/Controller_Commands.h>
 #include <ros_plane/Controller_Internals.h>
 #include <ros_pilot/JoyCommand.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <ros_plane/ControllerConfig.h>
+#include <ros_pilot/ControllerConfig.h>
 
-namespace rosplane {
+namespace ros_pilot {
 
 enum class alt_zones {
     TakeOff,
@@ -108,6 +109,7 @@ private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
     ros::Subscriber _vehicle_state_sub;
+    ros::Subscriber _vehicle_attitude_sub;
     ros::Subscriber _autopilot_commands_sub;
     ros::Subscriber _joy_commands_sub;
     ros::Publisher _actuators_pub;
@@ -120,15 +122,16 @@ private:
     fcu_common::State _vehicle_state;
 
     void vehicle_state_callback(const fcu_common::StateConstPtr& msg);
+    void vehicle_attitude_callback(const fcu_common::StateConstPtr& msg);
     void autopilot_commands_callback(const ros_plane::Controller_CommandsConstPtr& msg);
     void joy_commands_callback(const ros_pilot::JoyCommandConstPtr& msg);
     bool _autopilot_command_recieved;
     bool _joy_command_recieved;
 
-    dynamic_reconfigure::Server<ros_plane::ControllerConfig> _server;
-    dynamic_reconfigure::Server<ros_plane::ControllerConfig>::CallbackType _func;
+    dynamic_reconfigure::Server<ros_pilot::ControllerConfig> _server;
+    dynamic_reconfigure::Server<ros_pilot::ControllerConfig>::CallbackType _func;
 
-    void reconfigure_callback(ros_plane::ControllerConfig &config, uint32_t level);
+    void reconfigure_callback(ros_pilot::ControllerConfig &config, uint32_t level);
 
     /**
     * Convert from deflection angle to pwm
